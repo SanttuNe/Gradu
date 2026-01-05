@@ -1,13 +1,17 @@
+import os
 from pathlib import Path
 import pandas as pd
+from dotenv import load_dotenv
 
 #This script reads and combines multiple excel files containing stock market index data from Refinitiv into
 # a single cleaned CSV file.
 #Note: Google Gemini 3.0 was used to help write this code (mostly with the read_index_file and main functions)
 
 # Configuration
-RAW_BASE = Path("/Users/santtunevalainen/Desktop/Koulu/Gradu/RAW_DATA")
-OUTPUT_DIR = Path("/Users/santtunevalainen/Desktop/Koulu/Gradu/combined_data")
+
+load_dotenv()
+RAW_BASE = Path(os.getenv("RAW_DATA_PATH", "./RAW_DATA"))
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR_PATH", "./combined_data"))
 OUTPUT_NAME = "data_combined.csv"
 
 #Select these indexes
