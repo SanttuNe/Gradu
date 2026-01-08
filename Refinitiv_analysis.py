@@ -9,6 +9,8 @@ Key Features:
     and stores the results in a structured format.
 5. **Output Formatting**: Converts the forecast results into a pivoted DataFrame, optionally joins with actual values, 
     and saves the output to a CSV file called "TimesFM_Forecasts_Context_[WINDOW_SIZE].csv".
+
+Google Gemini 3 was used to aid with coding.
 """
 import numpy as np
 import pandas as pd
