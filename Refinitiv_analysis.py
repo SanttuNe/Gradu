@@ -1,7 +1,21 @@
+"""
+This script performs rolling forecasts on Realized Variance (RV) data using the TimesFM 2.5 model.
+It uses the Refinitiv dataset that was constructed with the script `full_clean_combine_ver_2.py`.
+Key Features:
+1. **Configuration**: Allows customization of input data path, window size, forecast horizon, and output file name.
+2. **Data Loading**: Reads and preprocesses the input CSV file containing Realized Variance data.
+3. **Model Initialization**: Loads and configures the TimesFM 2.5 model for forecasting.
+4. **Rolling Forecast Loop**: Iterates over each RV column, generates forecasts using a rolling window approach, 
+    and stores the results in a structured format.
+5. **Output Formatting**: Converts the forecast results into a pivoted DataFrame, optionally joins with actual values, 
+    and saves the output to a CSV file called "TimesFM_Forecasts_Context_[WINDOW_SIZE].csv".
+"""
 import numpy as np
 import pandas as pd
 import timesfm
 from tqdm import tqdm
+
+
 
 # --- 1. CONFIGURATION ---
 DATA_PATH = "/Users/santtunevalainen/Desktop/Koulu/Gradu/combined_data/Refinitiv_manual_RV_py.csv"
