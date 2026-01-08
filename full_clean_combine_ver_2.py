@@ -4,6 +4,10 @@ import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
 
+#This script reads and combines multiple excel files containing stock market index data from Refinitiv into
+# a single cleaned CSV file and calculates the realized variance for each index and day.
+#Note: Google Gemini 3.0 was used to help write this code (mostly with the read_index_file and main functions)
+
 # CONFIGURATION 
 load_dotenv()
 RAW_BASE = Path(os.getenv("RAW_DATA_PATH", "./RAW_DATA"))
