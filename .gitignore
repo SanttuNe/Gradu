@@ -1,15 +1,12 @@
 .env
+.venv
 
 
-# --- DATA FILES ---
-# We ignore these because they are huge and often private.
-# You only want the CODE on GitHub, not the raw data.
 *.xlsx
 *.csv
 *.xls
 
-# --- PYTHON JUNK ---
-# These are temporary files Python creates to run faster.
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,8 +15,6 @@ env/
 venv/
 ENV/
 
-# --- MAC/SYSTEM JUNK ---
-# Hidden files created by macOS
 .DS_Store
 .AppleDouble
 .LSOverride

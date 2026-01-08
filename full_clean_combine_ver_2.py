@@ -1,32 +1,32 @@
 import os
-from pathlib import Path
+import numpy as np
 import pandas as pd
+from pathlib import Path
 from dotenv import load_dotenv
 
-#This script reads and combines multiple excel files containing stock market index data from Refinitiv into
-# a single cleaned CSV file.
-#Note: Google Gemini 3.0 was used to help write this code (mostly with the read_index_file and main functions)
-
-# Configuration
-
+# CONFIGURATION 
 load_dotenv()
 RAW_BASE = Path(os.getenv("RAW_DATA_PATH", "./RAW_DATA"))
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR_PATH", "./combined_data"))
-OUTPUT_NAME = "data_combined.csv"
+COMBINED_NAME = "data_combined.csv"
+WIDE_NAME = "refinitiv_wide.csv"
+RV_NAME = "PYTHON_Refinitiv_manual_RV.csv"
+LATEX_OUT = "Index_Summary.tex"
 
-#Select these indexes
+# Select these indexes
 INDEXES = [".AEX", ".MXX", ".RUT", ".SSMI", ".BVSP", ".FTSE", ".IXIC", ".HSI", ".GDAXI", ".FCHI"]
 
-# Folder and Filename mapping
-# Format: (Folder_Path, Filename_Template)
+#Folder and filename mapping
+#Format: (Folder_Path, Filename_Template)
 SOURCE_CONFIGS = [
     (RAW_BASE / "2024", "{sym}_2024.xlsx"),
     (RAW_BASE / "2025 PARTIAL", "{sym}_2025.xlsx"),
     (RAW_BASE / "2025 END", "{sym}_2025_END.xlsx"),
 ]
-
 #Choose columns to keep
-KEEP_COLS = ["Exchange Date", "Exchange Time", "Local Time", "Close", "Net", "%Chg", "Open", "Low", "High"]
+KEEP_COLS = ["Exchange Date", "Exchange Time", "Local Time", "Close", "Open", "Low", "High"]
+
+# FUNCTIONS
 
 def read_index_file(path: Path, ticker: str) -> pd.DataFrame:
     """Detects header, reads the file, and cleans columns."""
@@ -40,17 +40,19 @@ def read_index_file(path: Path, ticker: str) -> pd.DataFrame:
         if sum(any(kw in val for kw in keywords) for val in vals) >= 4:
             header_idx = i
             break
-
     # Read full file starting from the detected header
     df = pd.read_excel(path, header=header_idx, engine="openpyxl")
     
-    # filter columns, add Symbol, and convert dates
+    # Filter columns and clean ticker (Remove dots)
     present_cols = [c for c in KEEP_COLS if c in df.columns]
     df = df[present_cols].copy()
-    df.insert(0, "Symbol", ticker)
+    df.insert(0, "Symbol", ticker.lstrip("."))
     
+    # Date conversions
     if "Exchange Date" in df.columns:
         df["Exchange Date"] = pd.to_datetime(df["Exchange Date"], errors='coerce')
+    if "Local Time" in df.columns:
+        df["Local Time"] = pd.to_datetime(df["Local Time"], errors='coerce')
         
     return df
 
@@ -58,34 +60,77 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     all_dfs = []
 
+    # READ AND COMBINE 
     for ticker in INDEXES:
         sym = ticker.lstrip(".")
         for folder, pattern in SOURCE_CONFIGS:
             file_path = folder / pattern.format(sym=sym)
-            
             if file_path.exists():
                 print(f"[OK] Processing {ticker} from {file_path.name}")
                 try:
                     all_dfs.append(read_index_file(file_path, ticker))
                 except Exception as e:
                     print(f"[ERROR] Could not read {file_path}: {e}")
-            else:
-                print(f"[SKIP] Missing: {file_path}")
 
     if not all_dfs:
-        print("No files were found. Check your RAW_BASE path.")
+        print("No files found.")
         return
 
-    # combine and sort
-    combined = pd.concat(all_dfs, ignore_index=True)
-    
-    # Sort: Symbol ascending, Date descending
-    combined = combined.sort_values(["Symbol", "Exchange Date"], ascending=[True, False])
+    refinitiv_data = pd.concat(all_dfs, ignore_index=True)
+    refinitiv_data = refinitiv_data.sort_values(["Symbol", "Exchange Date"], ascending=[True, False])
+    refinitiv_data.to_csv(OUTPUT_DIR / COMBINED_NAME, index=False)
 
-    # Save
-    out_path = OUTPUT_DIR / OUTPUT_NAME
-    combined.to_csv(out_path, index=False)
-    print(f"\nSaved {len(combined):,} rows to: {out_path}")
+    # PIVOT WIDER
+    # Using 'Local Time' as the primary time index
+    refinitiv_wide = refinitiv_data.pivot(
+        index="Local Time", 
+        columns="Symbol", 
+        values=["Open", "Close", "High", "Low"]
+    )
+    # Flatten multi-index columns: Symbol_Value (e.g., AEX_Close)
+    refinitiv_wide.columns = [f"{col[1]}_{col[0]}" for col in refinitiv_wide.columns]
+    refinitiv_wide = refinitiv_wide.sort_index()
+    refinitiv_wide.to_csv(OUTPUT_DIR / WIDE_NAME)
+
+    # CALCULATE REALIZED VARIANCE 
+    print("Calculating Realized Variance...")
+    # Work with long format for RV calculation (more efficient in pandas)
+    rv_data = refinitiv_data.copy()
+    rv_data['Date'] = rv_data['Local Time'].dt.date
+    rv_data = rv_data.sort_values(['Symbol', 'Local Time'])
+    
+    # Calculate log returns per Symbol per Day
+    rv_data['log_ret'] = rv_data.groupby(['Symbol', 'Date'])['Close'].transform(lambda x: np.log(x) - np.log(x.shift(1)))
+    
+    # Sum squared log returns (Realized Variance)
+    manual_rv_results = rv_data.groupby(['Symbol', 'Date'])['log_ret'].apply(lambda x: (x**2).sum()).reset_index()
+    manual_rv_results.rename(columns={'log_ret': 'Manual_RV'}, inplace=True)
+    
+    # Pivot to wide RV format
+    rv_wide = manual_rv_results.pivot(index='Date', columns='Symbol', values='Manual_RV')
+    rv_wide.columns = [f"RV_{col}" for col in rv_wide.columns]
+    rv_wide.to_csv(OUTPUT_DIR / RV_NAME)
+
+    # SUMMARY STATISTICS 
+    # Raw observation counts
+    obs_counts = refinitiv_data.groupby("Symbol").size().reset_index(name="Raw_Obs")
+    
+    # RV day counts (exclude days with 0 RV if they represent missing data)
+    rv_counts = manual_rv_results[manual_rv_results['Manual_RV'] > 0].groupby("Symbol").size().reset_index(name="RV_Obs")
+    
+    combined_summary = pd.merge(obs_counts, rv_counts, on="Symbol", how="outer").sort_values("Raw_Obs", ascending=False)
+    
+    print("\n--- Data Availability Summary ---")
+    print(combined_summary.to_string(index=False))
+
+    #EXPORT TO LATEX
+    combined_summary.to_latex(
+        OUTPUT_DIR / LATEX_OUT, 
+        index=False, 
+        caption="Summary of Data Observations and Realized Variance Days",
+        label="tab:obs_summary"
+    )
+    print(f"\n[DONE] Results saved to {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     main()
